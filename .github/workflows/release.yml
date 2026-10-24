@@ -43,16 +43,3 @@ jobs:
             tar czf "$asset" phone-gamepad
           fi
           gh release upload "$TAG" "$asset" --clobber --repo "$GITHUB_REPOSITORY"
-
-  extension:
-    runs-on: ubuntu-latest
-    env:
-      TAG: ${{ github.event.release.tag_name }}
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Package and upload
-        run: |
-          asset="$GITHUB_WORKSPACE/phone-gamepad-extension-$TAG.zip"
-          (cd extension && zip -r "$asset" .)
-          gh release upload "$TAG" "$asset" --clobber --repo "$GITHUB_REPOSITORY"
