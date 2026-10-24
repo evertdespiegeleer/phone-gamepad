@@ -3,7 +3,7 @@
 Use your phone as a gamepad for browser games. A small CLI serves a gamepad page and prints a QR code to open it on your phone; a Chrome extension makes each connected phone show up to web pages as a regular gamepad.
 
 > [!NOTE]
-> This is a little tool I built for myself because it's nice to have right now. I don't necessarily intend to maintain it, so issues and PRs may go unanswered. If you find it useful, a star is appreciated.
+> This is a little tool I built for myself because of some experiments I'm doing. I don't necessarily intend to maintain it, so issues and PRs may go unanswered. If you find it useful, a star is appreciated.
 
 ## Features
 
