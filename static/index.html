@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#16181d">
+<title>Phone Gamepad</title>
+<style>
+  :root { --bg: #16181d; --pad: #23262e; --edge: #343844; --fg: #c9ced8; --dim: #6b7282; --hot: #5b8cff; }
+  * { box-sizing: border-box; margin: 0; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body { background: var(--bg); color: var(--fg); font: 600 15px/1 system-ui, sans-serif; }
+  #pad { position: fixed; inset: 0; touch-action: none; padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); display: grid; grid-template: "ls . rs" auto "lstick center face" 1fr "dpad center rstick" 1fr / 1fr auto 1fr; gap: 8px 16px; }
+
+  /* Layouts other than "full" use a single row of controls, so these can be bigger. */
+  #pad[data-layout=retro] { grid-template: "ls . rs" auto "dpad center face" 1fr / 1fr auto 1fr; }
+  #pad[data-layout=stick] { grid-template: "ls . rs" auto "lstick center face" 1fr / 1fr auto 1fr; }
+  #pad[data-layout=twin] { grid-template: "ls . rs" auto "lstick center rstick" 1fr / 1fr auto 1fr; }
+  #pad[data-layout=retro] :is([data-area=lstick], [data-area=rstick], [data-b="6"], [data-b="7"]),
+  #pad[data-layout=stick] :is([data-area=dpad], [data-area=rstick], [data-b="6"], [data-b="7"]),
+  #pad[data-layout=twin] :is([data-area=dpad], [data-area=face]) { display: none; }
+  #pad:not([data-layout=full]) :is(.stick, .dpad, .face) { width: min(60vh, 30vw); }
+
+  .shoulders { display: flex; gap: 8px; }
+  .shoulders.right { justify-content: flex-end; }
+  .shoulder { flex: 1; max-width: 22vw; height: 11vh; min-height: 36px; border-radius: 10px; }
+
+  .btn { display: grid; place-items: center; background: var(--pad); border: 2px solid var(--edge); color: var(--fg); transition: background .05s; }
+  .btn.on { background: var(--hot); border-color: var(--hot); color: #fff; }
+
+  .cell { display: grid; place-items: center; }
+  .stick { width: min(38vh, 30vw); aspect-ratio: 1; border-radius: 50%; background: var(--pad); border: 2px solid var(--edge); position: relative; }
+  .knob { position: absolute; width: 44%; aspect-ratio: 1; left: 28%; top: 28%; border-radius: 50%; background: var(--edge); border: 2px solid var(--dim); }
+  .stick.on .knob { background: var(--hot); border-color: var(--hot); }
+
+  .dpad, .face { width: min(36vh, 28vw); aspect-ratio: 1; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); gap: 4px; }
+  .dpad .btn { border-radius: 6px; }
+  .face .btn { border-radius: 50%; font-size: 18px; }
+  .up { grid-area: 1 / 2; } .left { grid-area: 2 / 1; } .right { grid-area: 2 / 3; } .down { grid-area: 3 / 2; }
+
+  .center { grid-area: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+  .small { width: 64px; height: 28px; border-radius: 14px; font-size: 11px; }
+  #status { color: var(--dim); font-size: 12px; text-align: center; max-width: 120px; line-height: 1.3; }
+  #status.ok { color: #4cc38a; }
+  #status .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  #status.player { color: var(--fg); }
+  #gear { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--edge); background: none; color: var(--dim); font-size: 18px; display: grid; place-items: center; }
+
+  #settings { position: fixed; inset: 0; background: rgb(0 0 0 / .6); display: grid; place-items: center; padding: 16px; }
+  #settings[hidden] { display: none; }
+  .sheet { width: min(100%, 420px); max-height: 100%; overflow: auto; background: var(--pad); border: 2px solid var(--edge); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .sheet h2 { font-size: 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .sheet h3 { font-size: 13px; color: var(--dim); margin-bottom: 8px; }
+  .sections { display: grid; gap: 16px; }
+  @media (orientation: landscape) {
+    .sheet { width: min(100%, 720px); }
+    .sections { grid-template-columns: 1fr 1fr; }
+    .sheet button { padding: 8px 12px; }
+  }
+  #axes { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: center; font-size: 13px; }
+  #axes select { font: inherit; color: var(--fg); background: var(--bg); border: 2px solid var(--edge); border-radius: 8px; padding: 8px; min-width: 0; }
+  #layouts { display: flex; flex-direction: column; gap: 8px; }
+  .sheet button { font: inherit; color: var(--fg); background: var(--bg); border: 2px solid var(--edge); border-radius: 10px; padding: 12px; text-align: left; }
+  .sheet button small { display: block; color: var(--dim); font-weight: 400; font-size: 12px; margin-top: 4px; }
+  .sheet button[aria-pressed=true] { border-color: var(--hot); }
+  .sheet #close { padding: 6px 10px; }
+
+  @media (orientation: portrait) {
+    #pad { grid-template: "ls rs" auto "lstick face" 1fr "center center" auto "dpad rstick" 1fr / 1fr 1fr; gap: 16px 12px; }
+    /* Single-row layouts sit at the bottom, where thumbs rest. */
+    #pad[data-layout=retro] { grid-template: "ls rs" auto ". ." 1fr "dpad face" auto "center center" auto / 1fr 1fr; }
+    #pad[data-layout=stick] { grid-template: "ls rs" auto ". ." 1fr "lstick face" auto "center center" auto / 1fr 1fr; }
+    #pad[data-layout=twin] { grid-template: "ls rs" auto ". ." 1fr "lstick rstick" auto "center center" auto / 1fr 1fr; }
+    .shoulder { max-width: none; height: 7vh; }
+    .stick, #pad:not([data-layout=full]) .stick { width: min(46vw, 30vh); }
+    .dpad, .face, #pad:not([data-layout=full]) :is(.dpad, .face) { width: min(44vw, 28vh); }
+    .center { flex-direction: row; }
+    #status { max-width: none; }
+  }
+</style>
+</head>
+<body>
+<div id="pad" data-layout="full">
+  <div class="shoulders" style="grid-area: ls" data-area="ls"><div class="btn shoulder" data-b="6">L2</div><div class="btn shoulder" data-b="4">L1</div></div>
+  <div class="shoulders right" style="grid-area: rs" data-area="rs"><div class="btn shoulder" data-b="5">R1</div><div class="btn shoulder" data-b="7">R2</div></div>
+
+  <div class="cell" style="grid-area: lstick" data-area="lstick"><div class="stick" data-stick="0"><div class="knob"></div></div></div>
+  <div class="center">
+    <div id="status">connecting…</div>
+    <button id="gear" aria-label="Settings">&#x2699;&#xFE0E;</button>
+    <div class="btn small" data-b="8">SELECT</div>
+    <div class="btn small" data-b="9">START</div>
+  </div>
+  <div class="cell" style="grid-area: face" data-area="face">
+    <div class="face">
+      <div class="btn up" data-b="3">Y</div><div class="btn left" data-b="2">X</div>
+      <div class="btn right" data-b="1">B</div><div class="btn down" data-b="0">A</div>
+    </div>
+  </div>
+
+  <div class="cell" style="grid-area: dpad" data-area="dpad">
+    <div class="dpad">
+      <div class="btn up" data-b="12">▲</div><div class="btn left" data-b="14">◀</div>
+      <div class="btn right" data-b="15">▶</div><div class="btn down" data-b="13">▼</div>
+    </div>
+  </div>
+  <div class="cell" style="grid-area: rstick" data-area="rstick"><div class="stick" data-stick="1"><div class="knob"></div></div></div>
+</div>
+<div id="settings" hidden>
+  <div class="sheet">
+    <h2>Settings <button id="close">Done</button></h2>
+    <div class="sections">
+      <section><h3>Layout</h3><div id="layouts"></div></section>
+      <section><h3>Stick rest position</h3><div id="axes"></div></section>
+    </div>
+  </div>
+</div>
+
+<script>
+  const statusEl = document.getElementById('status');
+  const sticks = [...document.querySelectorAll('[data-stick]')];
+  const buttons = [...document.querySelectorAll('[data-b]')];
+  const padEl = document.getElementById('pad');
+  const settingsEl = document.getElementById('settings');
+  const layoutsEl = document.getElementById('layouts');
+
+  const layouts = [
+    { id: 'full', name: 'Full', desc: 'Two sticks, d-pad, ABXY, L1/L2/R1/R2' },
+    { id: 'retro', name: 'Retro', desc: 'D-pad, ABXY, L/R' },
+    { id: 'stick', name: 'Stick', desc: 'Left stick, ABXY, L/R' },
+    { id: 'twin', name: 'Twin stick', desc: 'Two sticks, L1/L2/R1/R2' },
+  ];
+
+  // Per stick, per axis (x, y): 'spring' returns to center on release, 'hold' stays put, 'hold-end' stays put and starts at the left / bottom end (e.g. RC throttle).
+  const axisModes = [['spring', 'spring'], ['spring', 'spring']];
+  // Where held axes currently rest. Not persisted, so a throttle always starts at its end.
+  const rest = [[0, 0], [0, 0]];
+  // Released spring axes return to center like a physical stick: exponential decay from where they were let go. Per stick, per axis: { from, at } or null.
+  const springBack = [[null, null], [null, null]];
+  const springMs = 20;
+
+  // pointerId -> { x, y, stick, startX, startY, startRest } where stick is the stick index the pointer started on, if any.
+  const pointers = new Map();
+  let ws;
+  let lastSent = '';
+  let lastButtons = 0;
+  let frameQueued = false;
+
+  let attempts = 0;
+
+  function connect() {
+    attempts++;
+    if (attempts > 1) statusEl.textContent = `connecting… (${attempts})`;
+    const socket = ws = new WebSocket(`ws://${location.host}/ws`);
+    // Network filters on the host (VPN, endpoint security) can silently drop a handshake, which would otherwise hang until the OS TCP timeout.
+    const timeout = setTimeout(() => socket.close(), 3000);
+    ws.onopen = () => { clearTimeout(timeout); attempts = 0; statusEl.textContent = 'connected'; statusEl.className = 'ok'; lastSent = ''; update(); };
+    ws.onmessage = (e) => {
+      const { player, color } = JSON.parse(e.data);
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = color;
+      statusEl.replaceChildren(dot, `Player ${player}`);
+      statusEl.className = 'player';
+    };
+    ws.onclose = () => {
+      clearTimeout(timeout);
+      if (statusEl.className === 'player') statusEl.textContent = 'reconnecting…';
+      statusEl.className = '';
+      setTimeout(connect, 500);
+    };
+  }
+
+  const clamp = (v) => Math.max(-1, Math.min(1, v));
+
+  // Spring axes follow the finger's absolute position; held axes move relative to where the finger landed, so touching a throttle doesn't make it jump.
+  function stickAxes(p) {
+    const modes = axisModes[p.stick];
+    const r = sticks[p.stick].getBoundingClientRect();
+    const radius = r.width / 2;
+    let dx = (p.x - r.left - radius) / radius;
+    let dy = (p.y - r.top - radius) / radius;
+    if (modes[0] === 'spring' && modes[1] === 'spring') {
+      const len = Math.hypot(dx, dy);
+      if (len > 1) { dx /= len; dy /= len; }
+      return [dx, dy];
+    }
+    return [
+      clamp(modes[0] === 'spring' ? dx : p.startRest[0] + (p.x - p.startX) / radius),
+      clamp(modes[1] === 'spring' ? dy : p.startRest[1] + (p.y - p.startY) / radius),
+    ];
+  }
+
+  function update() {
+    frameQueued = false;
+    let b = 0;
+    const now = performance.now();
+    let springing = false;
+    const axes = [0, 1].flatMap((stick) => [0, 1].map((axis) => {
+      const spring = springBack[stick][axis];
+      if (spring == null) return rest[stick][axis];
+      const v = spring.from * Math.exp(-(now - spring.at) / springMs);
+      if (Math.abs(v) < 0.005) { springBack[stick][axis] = null; return 0; }
+      springing = true;
+      return v;
+    }));
+    const activeSticks = new Set();
+
+    for (const p of pointers.values()) {
+      if (p.stick != null) {
+        const [x, y] = stickAxes(p);
+        axes[p.stick * 2] = x;
+        axes[p.stick * 2 + 1] = y;
+        activeSticks.add(p.stick);
+      } else {
+        // Hit-test on every move so a finger can slide between buttons.
+        const el = document.elementFromPoint(p.x, p.y)?.closest('[data-b]');
+        if (el != null) b |= 1 << Number(el.dataset.b);
+      }
+    }
+
+    sticks.forEach((el, i) => {
+      el.classList.toggle('on', activeSticks.has(i));
+      const radius = el.getBoundingClientRect().width / 2;
+      el.firstElementChild.style.transform = `translate(${axes[i * 2] * radius * 0.6}px, ${axes[i * 2 + 1] * radius * 0.6}px)`;
+    });
+    buttons.forEach((el) => el.classList.toggle('on', (b >> Number(el.dataset.b)) & 1));
+
+    if (b & ~lastButtons) navigator.vibrate?.(12);
+    lastButtons = b;
+
+    const msg = JSON.stringify({ b, a: axes.map((v) => Math.round(v * 1000) / 1000) });
+    if (msg !== lastSent && ws?.readyState === WebSocket.OPEN) {
+      ws.send(msg);
+      lastSent = msg;
+    }
+    if (springing) queueUpdate();
+  }
+
+  function queueUpdate() {
+    if (!frameQueued) { frameQueued = true; requestAnimationFrame(update); }
+  }
+
+  function setLayout(id) {
+    padEl.dataset.layout = id;
+    for (const el of layoutsEl.children) el.setAttribute('aria-pressed', el.dataset.layout === id);
+    try { localStorage.setItem('layout', id); } catch {}
+  }
+
+  for (const layout of layouts) {
+    const el = document.createElement('button');
+    el.dataset.layout = layout.id;
+    el.innerHTML = `${layout.name}<small>${layout.desc}</small>`;
+    el.addEventListener('click', () => setLayout(layout.id));
+    layoutsEl.append(el);
+  }
+  let saved = null;
+  try { saved = localStorage.getItem('layout'); } catch {}
+  setLayout(layouts.some((l) => l.id === saved) ? saved : 'full');
+
+  const axisLabels = [['Left stick ↔', 'Left stick ↕'], ['Right stick ↔', 'Right stick ↕']];
+  const axisEnds = ['left', 'bottom'];
+  // Gamepad API axes: left and up are -1, so a throttle at the bottom is +1.
+  const endValues = [-1, 1];
+
+  function setAxisMode(stick, axis, mode) {
+    axisModes[stick][axis] = mode;
+    rest[stick][axis] = mode === 'hold-end' ? endValues[axis] : 0;
+    springBack[stick][axis] = null;
+    try { localStorage.setItem('axisModes', JSON.stringify(axisModes)); } catch {}
+    queueUpdate();
+  }
+
+  let savedModes = null;
+  try { savedModes = JSON.parse(localStorage.getItem('axisModes')); } catch {}
+  for (const stick of [0, 1]) {
+    for (const axis of [0, 1]) {
+      const label = document.createElement('label');
+      label.textContent = axisLabels[stick][axis];
+      const select = document.createElement('select');
+      select.innerHTML = `<option value="spring">Springs back</option><option value="hold">Stays put</option><option value="hold-end">Stays put, starts ${axisEnds[axis]}</option>`;
+      const mode = savedModes?.[stick]?.[axis];
+      select.value = ['spring', 'hold', 'hold-end'].includes(mode) ? mode : 'spring';
+      setAxisMode(stick, axis, select.value);
+      select.addEventListener('change', () => setAxisMode(stick, axis, select.value));
+      document.getElementById('axes').append(label, select);
+    }
+  }
+
+  document.getElementById('gear').addEventListener('click', () => {
+    // Release everything that might be held so nothing stays pressed while the sheet is open.
+    pointers.clear();
+    queueUpdate();
+    settingsEl.hidden = false;
+  });
+  document.getElementById('close').addEventListener('click', () => { settingsEl.hidden = true; });
+
+  document.addEventListener('pointerdown', (e) => {
+    if (!settingsEl.hidden) return;
+    e.preventDefault();
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+    const stickEl = e.target.closest('[data-stick]');
+    const stick = stickEl ? Number(stickEl.dataset.stick) : null;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, stick, startX: e.clientX, startY: e.clientY, startRest: stick != null ? [...rest[stick]] : null });
+    queueUpdate();
+  });
+  document.addEventListener('pointermove', (e) => {
+    const p = pointers.get(e.pointerId);
+    if (p == null) return;
+    p.x = e.clientX;
+    p.y = e.clientY;
+    queueUpdate();
+  });
+  for (const type of ['pointerup', 'pointercancel']) {
+    document.addEventListener(type, (e) => {
+      const p = pointers.get(e.pointerId);
+      if (p == null) return;
+      if (p.stick != null) {
+        const values = stickAxes(p);
+        for (const axis of [0, 1]) {
+          if (axisModes[p.stick][axis] === 'spring') springBack[p.stick][axis] = { from: values[axis], at: performance.now() };
+          else rest[p.stick][axis] = values[axis];
+        }
+      }
+      pointers.delete(e.pointerId);
+      queueUpdate();
+    });
+  }
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  connect();
+</script>
+</body>
+</html>
