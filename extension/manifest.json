@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Phone Gamepad",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Exposes phones connected to the phone-gamepad server as gamepads to web pages.",
   "minimum_chrome_version": "116",
   "background": {
