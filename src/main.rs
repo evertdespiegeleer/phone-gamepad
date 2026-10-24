@@ -199,7 +199,10 @@ async fn main() {
     print!("{header}");
     state.update_status(|status| status.header = header);
 
+    // Windows has no resize signal; the status there is redrawn on the next change instead.
+    #[cfg(unix)]
     let resize_state = state.clone();
+    #[cfg(unix)]
     tokio::spawn(async move {
         let Ok(mut resized) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::window_change()) else { return };
         while resized.recv().await.is_some() {

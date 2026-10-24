@@ -14,19 +14,22 @@ Use your phone as a gamepad for browser games. A small CLI serves a gamepad page
 
 ## Install
 
-Requires a [Rust toolchain](https://rustup.rs) and a Chromium-based browser (Chrome, Edge, Brave, Arc, …).
+Requires a Chromium-based browser (Chrome, Edge, Brave, Arc, …).
 
-1. Install the CLI:
-   ```sh
-   git clone git@github.com:evertdespiegeleer/phone-gamepad.git && cd phone-gamepad
-   cargo install --path .
-   ```
+1. Install the CLI. Either:
+   - Download the archive for your platform from the [latest release](https://github.com/evertdespiegeleer/phone-gamepad/releases/latest), extract it and put `phone-gamepad` on your `PATH`. On macOS, clear the download quarantine first, since the binary isn't signed: `xattr -d com.apple.quarantine phone-gamepad`.
+   - Or build it with a [Rust toolchain](https://rustup.rs):
+     ```sh
+     git clone git@github.com:evertdespiegeleer/phone-gamepad.git && cd phone-gamepad
+     cargo install --path .
+     ```
 2. Load the extension in Chrome:
-   1. Open `chrome://extensions`.
-   2. Turn on **Developer mode** (top right).
-   3. Click **Load unpacked** and select the `extension/` directory of this repo.
+   1. Get the `extension/` directory: extract `phone-gamepad-extension-*.zip` from the release, or use the one in a clone of this repo.
+   2. Open `chrome://extensions`.
+   3. Turn on **Developer mode** (top right).
+   4. Click **Load unpacked** and select that directory.
 
-The extension stays installed across browser restarts. After pulling changes to `extension/`, click the reload icon on its card in `chrome://extensions`.
+The extension stays installed across browser restarts. After updating its files, click the reload icon on its card in `chrome://extensions`.
 
 ## Usage
 
@@ -57,6 +60,10 @@ The extension expects the default bridge port. To change it, also change `server
 - `page.js` runs before the page's own scripts and adds the phone gamepads to `navigator.getGamepads()`, firing `gamepadconnected` / `gamepaddisconnected`.
 
 Gamepads use the [standard mapping](https://w3c.github.io/gamepad/#remapping): 17 buttons (A, B, X, Y, L1, R1, L2, R2, Select, Start, L3, R3, d-pad, Home; L3, R3 and Home are never pressed) and 4 axes (left X/Y, right X/Y).
+
+## Releases
+
+Publishing a GitHub release runs `.github/workflows/release.yml`, which builds the CLI for macOS, Linux and Windows and attaches the archives and the extension zip to the release.
 
 ## Limitations
 

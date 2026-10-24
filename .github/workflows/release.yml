@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  binaries:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-24.04-arm }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+      TARGET: ${{ matrix.target }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --locked --target "$TARGET"
+        shell: bash
+      - name: Package and upload
+        shell: bash
+        run: |
+          name="phone-gamepad-$TAG-$TARGET"
+          cd "target/$TARGET/release"
+          if [ "$RUNNER_OS" = Windows ]; then
+            asset="$GITHUB_WORKSPACE/$name.zip"
+            7z a "$asset" phone-gamepad.exe
+          else
+            asset="$GITHUB_WORKSPACE/$name.tar.gz"
+            tar czf "$asset" phone-gamepad
+          fi
+          gh release upload "$TAG" "$asset" --clobber --repo "$GITHUB_REPOSITORY"
+
+  extension:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package and upload
+        run: |
+          asset="$GITHUB_WORKSPACE/phone-gamepad-extension-$TAG.zip"
+          (cd extension && zip -r "$asset" .)
+          gh release upload "$TAG" "$asset" --clobber --repo "$GITHUB_REPOSITORY"
