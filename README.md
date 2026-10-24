@@ -18,7 +18,7 @@ Requires a [Rust toolchain](https://rustup.rs) and a Chromium-based browser (Chr
 
 1. Install the CLI:
    ```sh
-   git clone <this repo> && cd phone-gamepad
+   git clone git@github.com:evertdespiegeleer/phone-gamepad.git && cd phone-gamepad
    cargo install --path .
    ```
 2. Load the extension in Chrome:
