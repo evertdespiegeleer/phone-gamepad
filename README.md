@@ -24,12 +24,12 @@ Requires a Chromium-based browser (Chrome, Edge, Brave, Arc, …).
      cargo install --path .
      ```
 2. Load the extension in Chrome:
-   1. Get the `extension/` directory: extract `phone-gamepad-extension-*.zip` from the release, or use the one in a clone of this repo.
+   1. Run `phone-gamepad extension`. It writes the extension to a fixed directory and prints its path.
    2. Open `chrome://extensions`.
    3. Turn on **Developer mode** (top right).
    4. Click **Load unpacked** and select that directory.
 
-The extension stays installed across browser restarts. After updating its files, click the reload icon on its card in `chrome://extensions`.
+The extension stays installed across browser restarts. On every start, `phone-gamepad` updates that copy to match itself, and the extension reloads itself when it changed. Refresh open tabs afterwards.
 
 ## Usage
 
@@ -51,10 +51,11 @@ To check that it works, open a gamepad tester such as [hardwaretester.com/gamepa
 
 Use `--host` when the phone should reach the machine by another name, e.g. its Tailscale MagicDNS name: `phone-gamepad --host my-macbook`.
 
-The extension expects the default bridge port. To change it, also change `server` in `extension/background.js` and reload the extension.
+The extension uses the bridge port `phone-gamepad` last started with. After changing it, reload the extension once in `chrome://extensions`, since it still looks for the old port.
 
 ## How it works
 
+- The CLI embeds the extension. `phone-gamepad extension` writes it out; later runs rewrite that copy, stamp a fingerprint in its manifest's `version_name` and send the fingerprint over the bridge. An extension with a different fingerprint calls `chrome.runtime.reload()`.
 - Phones send their state over a WebSocket to `/ws` on the phone port; the CLI relays it to the extension on `/bridge` on the bridge port.
 - The extension's service worker holds that connection, so page CSPs don't apply, and forwards updates to every frame.
 - `page.js` runs before the page's own scripts and adds the phone gamepads to `navigator.getGamepads()`, firing `gamepadconnected` / `gamepaddisconnected`.
@@ -63,7 +64,7 @@ Gamepads use the [standard mapping](https://w3c.github.io/gamepad/#remapping): 1
 
 ## Releases
 
-Publishing a GitHub release runs `.github/workflows/release.yml`, which builds the CLI for macOS, Linux and Windows and attaches the archives and the extension zip to the release.
+Publishing a GitHub release runs `.github/workflows/release.yml`, which builds the CLI for macOS, Linux and Windows and attaches the archives to the release.
 
 ## Limitations
 

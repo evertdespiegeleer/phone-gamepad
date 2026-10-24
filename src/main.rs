@@ -3,12 +3,14 @@ use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::response::Html;
 use axum::routing::get;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use qrcode::QrCode;
 use qrcode::render::unicode::Dense1x2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{IsTerminal, Write};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::broadcast;
@@ -27,10 +29,27 @@ struct Args {
     #[arg(long, env = "PHONE_GAMEPAD_HOST")]
     host: Option<String>,
 
-    /// Localhost port the Chrome extension connects to. Must match `server` in the extension.
-    #[arg(long, env = "PHONE_GAMEPAD_BRIDGE_PORT", default_value_t = 47800)]
+    /// Localhost port the Chrome extension connects to. The copy written by `phone-gamepad extension` follows it; reload the extension after changing it.
+    #[arg(long, env = "PHONE_GAMEPAD_BRIDGE_PORT", default_value_t = 47800, global = true)]
     bridge_port: u16,
+
+    #[command(subcommand)]
+    command: Option<Command>,
 }
+
+#[derive(Subcommand)]
+enum Command {
+    /// Write the Chrome extension to a fixed directory and print how to load it. Once loaded, phone-gamepad keeps it up to date.
+    Extension,
+}
+
+/// The extension, embedded so the CLI can write a copy that matches it.
+const EXTENSION_FILES: [(&str, &str); 4] = [
+    ("manifest.json", include_str!("../extension/manifest.json")),
+    ("background.js", include_str!("../extension/background.js")),
+    ("page.js", include_str!("../extension/page.js")),
+    ("relay.js", include_str!("../extension/relay.js")),
+];
 
 /// State sent by a phone: button bitmask and left X/Y, right X/Y axes in -1.0..=1.0.
 #[derive(Clone, Default, Deserialize, Serialize)]
@@ -72,6 +91,8 @@ struct AppState {
     players: Arc<Mutex<HashMap<usize, Input>>>,
     updates: broadcast::Sender<String>,
     status: Arc<Mutex<Status>>,
+    /// Fingerprint of the extension copy this run wrote, sent to the extension so it reloads when it runs an older copy.
+    extension: Option<String>,
 }
 
 /// The live status block printed below the QR code.
@@ -133,7 +154,7 @@ impl AppState {
         };
         let players = if players.is_empty() { "none".to_string() } else { players.iter().map(|&p| format!("{} {p}", dot(p))).collect::<Vec<_>>().join(", ") };
         let browser = match status.browsers {
-            0 => "not connected (is the extension loaded?)".to_string(),
+            0 => "not connected (is the extension loaded? see `phone-gamepad extension`)".to_string(),
             1 => "connected".to_string(),
             n => format!("connected ({n} browsers)"),
         };
@@ -169,7 +190,17 @@ impl AppState {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    let state = AppState { players: Default::default(), updates: broadcast::channel(256).0, status: Default::default() };
+    if let Some(Command::Extension) = args.command {
+        install_extension(args.bridge_port);
+        return;
+    }
+
+    // Keep a copy written by `phone-gamepad extension` in sync with this binary.
+    let mut extension_error = None;
+    let extension = extension_dir().filter(|dir| dir.exists()).and_then(|dir| {
+        write_extension(&dir, args.bridge_port).map_err(|err| extension_error = Some(format!("failed to update the extension in {}: {err}", dir.display()))).ok()
+    });
+    let state = AppState { players: Default::default(), updates: broadcast::channel(256).0, status: Default::default(), extension };
 
     let phone_app = Router::new()
         .route("/", get(|| async { Html(include_str!("../static/index.html")) }))
@@ -197,7 +228,10 @@ async fn main() {
         args.bridge_port,
     );
     print!("{header}");
-    state.update_status(|status| status.header = header);
+    state.update_status(|status| {
+        status.header = header;
+        status.last_error = extension_error;
+    });
 
     // Windows has no resize signal; the status there is redrawn on the next change instead.
     #[cfg(unix)]
@@ -213,6 +247,45 @@ async fn main() {
     let (phone_result, bridge_result) = tokio::join!(axum::serve(phone_listener, phone_app), axum::serve(bridge_listener, bridge_app));
     phone_result.unwrap();
     bridge_result.unwrap();
+}
+
+fn extension_dir() -> Option<PathBuf> {
+    Some(dirs::data_dir()?.join("phone-gamepad").join("extension"))
+}
+
+/// Writes the extension to `dir`, pointed at `bridge_port`. Returns its fingerprint, which the written manifest carries in `version_name`.
+fn write_extension(dir: &Path, bridge_port: u16) -> std::io::Result<String> {
+    let files = EXTENSION_FILES.map(|(name, contents)| (name, contents.replace("localhost:47800", &format!("localhost:{bridge_port}"))));
+    let mut hasher = DefaultHasher::new();
+    files.hash(&mut hasher);
+    let fingerprint = format!("{} ({:016x})", env!("CARGO_PKG_VERSION"), hasher.finish());
+
+    std::fs::create_dir_all(dir)?;
+    for (name, mut contents) in files {
+        if name == "manifest.json" {
+            let mut manifest: serde_json::Value = serde_json::from_str(&contents).unwrap();
+            manifest["version_name"] = fingerprint.clone().into();
+            contents = serde_json::to_string_pretty(&manifest).unwrap();
+        }
+        std::fs::write(dir.join(name), contents)?;
+    }
+    Ok(fingerprint)
+}
+
+fn install_extension(bridge_port: u16) {
+    let Some(dir) = extension_dir() else {
+        eprintln!("no data directory found to write the extension to");
+        std::process::exit(1);
+    };
+    if let Err(err) = write_extension(&dir, bridge_port) {
+        eprintln!("failed to write the extension to {}: {err}", dir.display());
+        std::process::exit(1);
+    }
+    let paste_hint = if cfg!(target_os = "macos") { " (in the file picker, press Cmd+Shift+G and paste the path)" } else { "" };
+    println!(
+        "Wrote the extension to {}\n\nLoad it once in Chrome or another Chromium-based browser:\n1. Open chrome://extensions\n2. Turn on Developer mode (top right)\n3. Click Load unpacked and select that directory{paste_hint}\n\nFrom then on, phone-gamepad updates this copy on start and the extension reloads itself when it changed. Refresh open tabs after that.",
+        dir.display()
+    );
 }
 
 fn strip_ansi(text: &str) -> String {
@@ -281,6 +354,11 @@ async fn phone(mut socket: WebSocket, state: AppState) {
 
 /// A browser extension connection: gets the current players, then every update.
 async fn bridge(mut socket: WebSocket, state: AppState) {
+    if let Some(extension) = &state.extension
+        && socket.send(Message::Text(serde_json::json!({ "extension": extension }).to_string().into())).await.is_err()
+    {
+        return;
+    }
     let mut updates = state.updates.subscribe();
     let snapshot: Vec<String> = state.players.lock().unwrap().iter().map(|(&p, input)| serde_json::to_string(&Update { p, input: Some(input.clone()) }).unwrap()).collect();
     for msg in snapshot {
